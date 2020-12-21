@@ -38,6 +38,7 @@ class EmAlg():
 
 
     def plot_data(self, points, cent_clusters):
+        # Plot the points along with the clusters
         colors = iter(['red', 'yellow', 'pink', 'green', 'purple', 'black'])
         plt.scatter(points[:,0], points[:,1], s=2.5)
         if(cent_clusters):
@@ -46,45 +47,38 @@ class EmAlg():
         plt.show()
 
     def initialize_clusters(self, points, num_clusters, m):
+        #create n random positioned clusters
         for i in range(num_clusters):
             cluster = Cluster()
             cluster.initializeValues(num_clusters, m,self.dim_data)
             self.clusters.append(cluster)
         self.plot_data(points, self.clusters)
 
-
-    def compute_gamma(self, num_clusters, points):
-        gamma = -np.ones(shape=(600,))
-        for i in range(num_clusters):
-            dd = points - self.clusters[i].centroids
-            dd = np.sum(np.dot(dd / self.clusters[i].covariance_matrices, dd))
-        print(gamma)
-
-    def init_weight(self, n, k):
+    def init_gamma(self, n, k):
         row = [-1] * n
         w = [np.array(row)] * k
         return w
 
     def em(self, iterations, points, n, m, num_clusters, isImproved):
+        # the em algorithm with a little adjustment based on if we are running it for the first time and we need to initialize the clusters or not
         if not isImproved:
             self.initialize_clusters(points, num_clusters, m)
         for i in range(iterations +1):
-            last_guess = self.new_weight_approx(points, n, num_clusters)
-            new_clusters = self.compute_clusters(points, m, last_guess, num_clusters)
+            gamma = self.compute_gamma(points, n, num_clusters)
+            new_clusters = self.compute_clusters(points, m, gamma, num_clusters)
             self.clusters = new_clusters
-
         plt.figure(1)
         self.plot_data(points, self.clusters)
-        return last_guess
 
     def getInv(self, k):
+        #calculate the inverse of a matrix with a little adjustment so that there is a greater chance that the matrix k will have an inverse
         m = 10 ** -8
         a = k + + np.eye(k.shape[1]) * m
         KInv = linalg.inv(k + + np.eye(k.shape[1]) * m)
         return KInv
 
-    def new_weight_approx(self, points, n, num_clusters):
-        gamma = self.init_weight(n, number_clusters)
+    def compute_gamma(self, points, n, num_clusters):
+        gamma = self.init_gamma(n, number_clusters)
         for i in range(num_clusters):
             dd = points - self.clusters[i].centroids
             dd = np.sum(np.dot(dd, self.getInv(self.clusters[i].covariance_matrices)) * dd, axis=1)
@@ -93,34 +87,34 @@ class EmAlg():
         gamma = gamma / np.sum(gamma, axis=0)
         return gamma
 
-    def compute_clusters(self, points, m, last, num_clusters):
+    def compute_clusters(self, points, m, gamma, num_clusters):
+        #In this method we will update the clusters based on the previous ones
         new_clusters = []
         for i in range(num_clusters):
             new_cluster = Cluster()
             new_cluster.zeroValues(m, num_clusters)
             new_clusters.append(new_cluster)
-        total_probability = np.sum(last)
+        total_probability = np.sum(gamma)
 
         for i in range(num_clusters):
-            new_clusters[i].centroids = np.sum(np.multiply(points, last[i].T), axis=0) / np.sum(last[i])
+            new_clusters[i].centroids = np.sum(np.multiply(points, gamma[i].T), axis=0) / np.sum(gamma[i])
             new_clusters[i].centroids = np.asarray(new_clusters[i].centroids).ravel()
             tmp = points - new_clusters[i].centroids
-            new_clusters[i].covariance_matrices =np.array((np.dot(tmp.T, np.multiply(tmp, last[i].T)) / np.sum(last[i])).T)
-            new_clusters[i].cluster_probability = np.sum(last[i]) / total_probability
+            new_clusters[i].covariance_matrices =np.array((np.dot(tmp.T, np.multiply(tmp, gamma[i].T)) / np.sum(gamma[i])).T)
+            new_clusters[i].cluster_probability = np.sum(gamma[i]) / total_probability
         return new_clusters
 
-    def KL(self, centroid1, cov1, centroid2, cov2):
-        """
-            Kullback-Leibler divergence value for two clusters.
-        """
+    def KL(self, centroid1, covariance1, centroid2, covariance2):
+            #Kullback-Leibler divergence value for two clusters.
         dm = centroid1 - centroid2
-        comp1 = np.log(np.linalg.det(np.dot(cov2, np.linalg.inv(cov1))))
-        comp2 = np.trace(np.dot((cov2 - cov1), np.linalg.inv(cov2)))
-        comp3 = np.dot((np.dot(dm, np.linalg.inv(cov2))), dm.T)
+        comp1 = np.log(np.linalg.det(np.dot(covariance2, np.linalg.inv(covariance1))))
+        comp2 = np.trace(np.dot((covariance2 - covariance1), np.linalg.inv(covariance2)))
+        comp3 = np.dot((np.dot(dm, np.linalg.inv(covariance2))), dm.T)
         divergence = (comp1 - comp2 + comp3) / 2
         return divergence
 
     def calculate_clusters_closeness(self, num_clusters):
+        #calculate the most appropriate clusters based on the KL method
         jammed_clusters = [
             [self.KL(self.clusters[i].centroids,
                 self.clusters[i].covariance_matrices,
@@ -135,114 +129,8 @@ class EmAlg():
 
         return jammed_clusters
 
-    def calculate_cluster_looseness(self, clusters_meta, num_clusters):
-        #todo modify the method, make you own
-        cls_id = 0
-        maxim = clusters_meta[0]['std_dev']
-        for i in range(1, num_clusters):
-            if clusters_meta[i]['std_dev'] > maxim:
-                maxim = clusters_meta[i]['std_dev']
-                cls_id = i
-        return cls_id
-
-    def move_clusters(self, jammed_cluster_index, loose_cluster_index, m):
-        new_params = deepcopy(self.clusters)
-        new_params[jammed_cluster_index].centroids = new_params[loose_cluster_index].centroids
-        new_params[jammed_cluster_index].covariance_matrices= np.diag([1 for _ in range(m)])
-        return new_params
-
-    def measures_condensed_nature_of_clusters(self, last_guess, points, num_clusters, params):
-        """
-        Storing kind of a meta-data for each cluster, structred as a dict with:
-            data - list of points (3D/2D and so on)
-            std_dev - standard deviation from the centroid
-        """
-
-        clusters_meta = {}
-        for i in range(num_clusters):
-            clusters_meta[i] = {'data': np.empty(shape=(600, 2)), 'std_dev': -1}
-
-        i = 0
-        for cls_id in np.argmax(last_guess.T, axis=1):
-            cls_id = np.asarray(cls_id)[0][0]
-            np.append(clusters_meta[cls_id]['data'],points[i])
-            i += 1
-
-        for i in range(num_clusters):
-            clusters_meta[i]['std_dev'] = np.mean(
-                np.linalg.norm(clusters_meta[i]['data'] - params[i].centroids.tolist()))
-
-        return clusters_meta
-
-    # def improve_em(self, iterations, points, n, m, num_clusters, maxRuns=10000):
-    #     last_guess = self.em(iterations, points, n, m, num_clusters, False)
-    #
-    #     stillJammed = True
-    #     previous = [-1, -1]
-    #
-    #     i = 0
-    #     while stillJammed or maxRuns:
-    #
-    #         jammed_clusters = self.calculate_clusters_closeness(num_clusters)
-    #         jammed_cluster = jammed_clusters[0][1]
-    #
-    #         clusters_meta = self.measures_condensed_nature_of_clusters(last_guess, points, num_clusters, self.clusters)
-    #         loose_cluster = self.calculate_cluster_looseness(clusters_meta, num_clusters)
-    #
-    #         if [loose_cluster, jammed_cluster] == previous:
-    #             break
-    #
-    #         self.clusters = self.move_clusters(jammed_cluster, loose_cluster, m)
-    #
-    #         last_guess = self.em(iterations, points, n, m, num_clusters, True)
-    #
-    #         print('The current run: '+ str(i))
-    #         print('jammed id: {} | loose id: {}'.format(jammed_cluster, loose_cluster))
-    #         previous = [loose_cluster, jammed_cluster]
-    #         i += 1
-    #         maxRuns-=1
-    #
-    #     return self.clusters, last_guess
-
-    def improve_em(self, iterations, points, n, m, num_clusters):
-        last_guess = self.em(iterations, points, n, m, num_clusters, False)
-
-        jammed = True
-        previous = [-1, -1]
-
-        i = 0
-        while jammed:
-
-            # (i) Measures the pairwise distence between cluster centres and selects the closest pair
-            jammed_clstrs = self.calculate_clusters_closeness(num_clusters)
-
-            jammed_cluster = jammed_clstrs[0][1]
-
-            # (ii) Measures the condensed nature of clusters and the "loosest" one is selected
-            # clusters_meta = self.measures_condensed_nature_of_clusters(last_guess, points, num_clusters, self.clusters)
-            # loose_cluster = self.calculate_cluster_looseness(clusters_meta, num_clusters)
-
-            loose_cluster = self.get_loosest_cluster(points, num_clusters, self.clusters)
-
-            if [loose_cluster, jammed_cluster] == previous:
-                break
-
-            # # (iii) One of the centres from (i) is moved to the vicinity of the centre of (ii)
-            self.clusters = self.move_clusters(jammed_cluster, loose_cluster, m)
-
-            # Give them (params) another spin
-            last_guess = self.em(iterations, points, n, m, num_clusters, True)
-
-            print('### epoch-{}: '.format(i))
-            print('jammed id: {} | loose id: {}'.format(jammed_cluster, loose_cluster))
-
-            previous = [loose_cluster, jammed_cluster]
-            i += 1
-
-        return self.clusters, last_guess
-
-    def get_loosest_cluster(self, points, num_clusters, clusters):
-
+    def calculate_loosest_cluster(self, points, num_clusters, clusters):
+        #compute the cluster that is the lossest compared with its points
         new_points_class = [[] for _ in range(num_clusters)]
         mean_distance_cluster = [0 for _ in range(num_clusters)]
         for point in points:
@@ -271,9 +159,45 @@ class EmAlg():
 
         return biggest_id
 
+    def move_clusters(self, jammed_cluster_index, loose_cluster_index, m):
+        #move the more jammed cluster next to the more loosen one
+        new_clusters = deepcopy(self.clusters)
+        new_clusters[jammed_cluster_index].centroids = new_clusters[loose_cluster_index].centroids
+        new_clusters[jammed_cluster_index].covariance_matrices= np.diag([1 for _ in range(m)])
+        return new_clusters
+
+    def improved_em(self, iterations, points, n, m, num_clusters, maxRuns=1000):
+        self.em(iterations, points, n, m, num_clusters, False)
+        stillJammed = True
+        previous = [-1, -1]
+
+        i = 0
+        while stillJammed or maxRuns:
+
+            closest_clusters = self.calculate_clusters_closeness(num_clusters)
+
+            jammed_cluster_index = closest_clusters[0][1]
+            loose_cluster_index = self.calculate_loosest_cluster(points, num_clusters, self.clusters)
+
+            if [loose_cluster_index, jammed_cluster_index] == previous:
+                break
+
+            self.clusters =  self.move_clusters(jammed_cluster_index, loose_cluster_index, m)
+
+            self.em(iterations, points, n, m, num_clusters, True)
+
+            print('Run: ' + str(i))
+            print('jammed id: {} | loose id: {}'.format(jammed_cluster_index, loose_cluster_index))
+            previous = [loose_cluster_index, jammed_cluster_index]
+            i += 1
+            maxRuns -= 1
+
+
+
+
 
 dim_data = 2
 em = EmAlg(dim_data)
 points, n, m = em.read_data('data_input.txt')
 number_clusters = 5
-em.improve_em(100, points, n, m, number_clusters)
+em.improved_em(100, points, n, m, number_clusters)
