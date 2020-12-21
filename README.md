@@ -23,3 +23,7 @@ We will do this until there is no change from one iteration to another in terms 
 I have added an additional exit solution in case that a maximum number of runs has been reached. The main role of this maximum is in the condition 
 that a loop has been observed. 
 
+![image](https://user-images.githubusercontent.com/48009948/102809912-7a0c9880-43cb-11eb-80cb-54beda44e677.png)
+![image](https://user-images.githubusercontent.com/48009948/102809993-9dcfde80-43cb-11eb-8f87-3c86e5f03709.png)
+![image](https://user-images.githubusercontent.com/48009948/102810038-ae805480-43cb-11eb-98ab-f28a5068ed8a.png)
+
