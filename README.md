@@ -2,7 +2,7 @@
 
 In the first part we use the classic em algorithm for obtaining an more accurate position for the clusters.
 For storing the information specific to each cluster i have used a class, that has two main methods one for initializing 
-with 0, and one for the initial random positioning;
+with zero, and one for the initial random positioning;
 
 The algorithms used are the ones presented in the lecture for Julia but transposed in Python. Here one of the difference was
 that for the division of dd/centroids I had to use the product with the inverse of the matrix because of some python limitations
@@ -27,3 +27,4 @@ that a loop has been observed.
 ![image](https://user-images.githubusercontent.com/48009948/102809993-9dcfde80-43cb-11eb-8f87-3c86e5f03709.png)
 ![image](https://user-images.githubusercontent.com/48009948/102810038-ae805480-43cb-11eb-98ab-f28a5068ed8a.png)
 
+I have choose to rewrite all the algorithms in python as i have encountered some problems with Julia notebook on my laptop
