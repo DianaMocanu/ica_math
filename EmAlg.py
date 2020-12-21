@@ -1,5 +1,5 @@
 from copy import deepcopy
-
+import random
 import numpy as np
 import matplotlib.pyplot as plt
 from math import sqrt, pi
@@ -8,7 +8,7 @@ from numpy.linalg import linalg
 class Cluster():
 
     def initializeValues(self, clusters_number, mtx_cov, data_dim):
-        self.centroids = ((2*np.random.random((1,data_dim)) - 1)*15)[0]
+        self.centroids = np.array([(2*random.random()-1)*15,random.random()*(-17)])
         self.covariance_matrices = np.diag([1 for _ in range(mtx_cov)])
         self.cluster_probability = 1/clusters_number
 
@@ -33,8 +33,6 @@ class EmAlg():
 
         rows = len(points)
         cols = len(points[0])
-        print('{} contains: {} lines, with {} {}s per line.'
-              .format(file, rows, cols, type(points[0][0]).__name__))
 
         return np.array(points), rows, cols
 
@@ -54,8 +52,16 @@ class EmAlg():
             self.clusters.append(cluster)
         self.plot_data(points, self.clusters)
 
+
+    def compute_gamma(self, num_clusters, points):
+        gamma = -np.ones(shape=(600,))
+        for i in range(num_clusters):
+            dd = points - self.clusters[i].centroids
+            dd = np.sum(np.dot(dd / self.clusters[i].covariance_matrices, dd))
+        print(gamma)
+
     def init_weight(self, n, k):
-        row = [0] * n
+        row = [-1] * n
         w = [np.array(row)] * k
         return w
 
@@ -72,23 +78,20 @@ class EmAlg():
         return last_guess
 
     def getInv(self, k):
-        m = 10 ^ -20
+        m = 10 ** -8
+        a = k + + np.eye(k.shape[1]) * m
         KInv = linalg.inv(k + + np.eye(k.shape[1]) * m)
         return KInv
 
     def new_weight_approx(self, points, n, num_clusters):
-        weight = self.init_weight(n, number_clusters)
+        gamma = self.init_weight(n, number_clusters)
         for i in range(num_clusters):
-            print(self.clusters[i])
-            z = points - self.clusters[i].centroids
-            print(z)
-            print(self.clusters[i].covariance_matrices)
-            d = np.sum(np.dot(z, self.getInv(self.clusters[i].covariance_matrices)) * z, axis=1)
-            weight[i] = self.clusters[i].cluster_probability * np.exp(-d / 2) / \
-                        sqrt(np.linalg.det(2 * pi * self.clusters[i].covariance_matrices))
-        weight = np.matrix(weight)
-        weight = weight / np.sum(weight, axis=0)
-        return weight
+            dd = points - self.clusters[i].centroids
+            dd = np.sum(np.dot(dd, self.getInv(self.clusters[i].covariance_matrices)) * dd, axis=1)
+            gamma[i] = self.clusters[i].cluster_probability * np.exp(-dd / 2) / sqrt(np.linalg.det(self.clusters[i].covariance_matrices)) + 1e-11
+        gamma = np.matrix(gamma)
+        gamma = gamma / np.sum(gamma, axis=0)
+        return gamma
 
     def compute_clusters(self, points, m, last, num_clusters):
         new_clusters = []
@@ -114,7 +117,6 @@ class EmAlg():
         comp1 = np.log(np.linalg.det(np.dot(cov2, np.linalg.inv(cov1))))
         comp2 = np.trace(np.dot((cov2 - cov1), np.linalg.inv(cov2)))
         comp3 = np.dot((np.dot(dm, np.linalg.inv(cov2))), dm.T)
-        a = np.asarray((comp1 - comp2 + comp3) / 2)
         divergence = (comp1 - comp2 + comp3) / 2
         return divergence
 
@@ -135,7 +137,6 @@ class EmAlg():
 
     def calculate_cluster_looseness(self, clusters_meta, num_clusters):
         #todo modify the method, make you own
-        print(num_clusters)
         cls_id = 0
         maxim = clusters_meta[0]['std_dev']
         for i in range(1, num_clusters):
@@ -168,12 +169,40 @@ class EmAlg():
             i += 1
 
         for i in range(num_clusters):
-            a = clusters_meta[i]['data']
-            b = params[i].centroids
             clusters_meta[i]['std_dev'] = np.mean(
                 np.linalg.norm(clusters_meta[i]['data'] - params[i].centroids.tolist()))
 
         return clusters_meta
+
+    # def improve_em(self, iterations, points, n, m, num_clusters, maxRuns=10000):
+    #     last_guess = self.em(iterations, points, n, m, num_clusters, False)
+    #
+    #     stillJammed = True
+    #     previous = [-1, -1]
+    #
+    #     i = 0
+    #     while stillJammed or maxRuns:
+    #
+    #         jammed_clusters = self.calculate_clusters_closeness(num_clusters)
+    #         jammed_cluster = jammed_clusters[0][1]
+    #
+    #         clusters_meta = self.measures_condensed_nature_of_clusters(last_guess, points, num_clusters, self.clusters)
+    #         loose_cluster = self.calculate_cluster_looseness(clusters_meta, num_clusters)
+    #
+    #         if [loose_cluster, jammed_cluster] == previous:
+    #             break
+    #
+    #         self.clusters = self.move_clusters(jammed_cluster, loose_cluster, m)
+    #
+    #         last_guess = self.em(iterations, points, n, m, num_clusters, True)
+    #
+    #         print('The current run: '+ str(i))
+    #         print('jammed id: {} | loose id: {}'.format(jammed_cluster, loose_cluster))
+    #         previous = [loose_cluster, jammed_cluster]
+    #         i += 1
+    #         maxRuns-=1
+    #
+    #     return self.clusters, last_guess
 
     def improve_em(self, iterations, points, n, m, num_clusters):
         last_guess = self.em(iterations, points, n, m, num_clusters, False)
@@ -187,14 +216,13 @@ class EmAlg():
             # (i) Measures the pairwise distence between cluster centres and selects the closest pair
             jammed_clstrs = self.calculate_clusters_closeness(num_clusters)
 
-            if len(jammed_clstrs) == 0:
-                break
-
             jammed_cluster = jammed_clstrs[0][1]
 
             # (ii) Measures the condensed nature of clusters and the "loosest" one is selected
-            clusters_meta = self.measures_condensed_nature_of_clusters(last_guess, points, num_clusters, self.clusters)
-            loose_cluster = self.calculate_cluster_looseness(clusters_meta, num_clusters)
+            # clusters_meta = self.measures_condensed_nature_of_clusters(last_guess, points, num_clusters, self.clusters)
+            # loose_cluster = self.calculate_cluster_looseness(clusters_meta, num_clusters)
+
+            loose_cluster = self.get_loosest_cluster(points, num_clusters, self.clusters)
 
             if [loose_cluster, jammed_cluster] == previous:
                 break
@@ -207,19 +235,45 @@ class EmAlg():
 
             print('### epoch-{}: '.format(i))
             print('jammed id: {} | loose id: {}'.format(jammed_cluster, loose_cluster))
-            print('norm: {}'.format(
-                [[clusters_meta[i]['std_dev'], len(clusters_meta[i]['data'])] for i in range(num_clusters)]))
+
             previous = [loose_cluster, jammed_cluster]
             i += 1
 
         return self.clusters, last_guess
+
+    def get_loosest_cluster(self, points, num_clusters, clusters):
+
+        new_points_class = [[] for _ in range(num_clusters)]
+        mean_distance_cluster = [0 for _ in range(num_clusters)]
+        for point in points:
+            smallest_distance = 100000
+            centroid_Id = 0
+            Id = 0
+            for el in clusters:
+                a = np.array(point)
+                b = el.centroids
+                distance = np.linalg.norm(a - b)
+                if distance < smallest_distance:
+                    centroid_Id = Id
+                    smallest_distance = distance
+
+                Id += 1
+            mean_distance_cluster[centroid_Id] += smallest_distance
+            new_points_class[centroid_Id].append([point[0], point[1]])
+
+        biggest_id = -1
+        biggest_mean = 0
+        for i in range(num_clusters):
+            mean_distance_cluster[i] /= len(new_points_class[i])
+            if mean_distance_cluster[i] > biggest_mean:
+                biggest_mean = mean_distance_cluster[i]
+                biggest_id = i
+
+        return biggest_id
 
 
 dim_data = 2
 em = EmAlg(dim_data)
 points, n, m = em.read_data('data_input.txt')
 number_clusters = 5
-# em.em(5,points, n, m, number_clusters, False)
-em.improve_em(5, points, n, m, number_clusters)
-# cent_clusters, cov_clusters, pr_clusters = init_mixture_parameters(train_data,n_clus)
-# em.plot_data(points, cent_clusters = [])
+em.improve_em(100, points, n, m, number_clusters)
